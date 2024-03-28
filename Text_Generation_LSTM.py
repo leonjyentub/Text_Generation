@@ -1,4 +1,5 @@
 #https://www.kdnuggets.com/2020/07/pytorch-lstm-text-generation-tutorial.html
+#https://www.kaggle.com/code/purvasingh/text-generation-via-rnn-and-lstms-pytorch
 
 import torch
 from torch import nn
@@ -95,7 +96,7 @@ if __name__ == '__main__':
     sequence_length = 3
     dataset = Dataset('Data/三國演義-smalldata.txt', sequence_length)
     #dataset = Dataset('Data/reddit-cleanjokes.csv', sequence_length)
-    dataloader = DataLoader(dataset, batch_size=2)
+    dataloader = DataLoader(dataset, batch_size=1024)
     model = Model(n_vocab = dataset.vocab_size).to(device)
-    train(dataloader, model, epochs=5, sequence_length=sequence_length)
-    print(predict(dataset, model, text='東漢',next_words=2500))
+    train(dataloader, model, epochs=1, sequence_length=sequence_length)
+    print(predict(dataset, model, text='兄弟三人',next_words=2500))
