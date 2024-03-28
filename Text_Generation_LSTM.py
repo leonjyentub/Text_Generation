@@ -9,12 +9,13 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 from collections import Counter
 from opencc import OpenCC
 import jieba
+jieba.set_dictionary('dict.txt.big')
 class Dataset():
     def __init__(self, path, sequence_length):
         cc = OpenCC('s2t')
         # 讀txt檔案，並且接成一個長字串後，去除空白、去除換行符號後，以字為單位切割
         corpus = cc.convert(open(path, 'r', encoding='UTF-8').read()).replace('\n', '').replace(' ', '').replace('　','')
-        self.words = jieba.lcut(corpus)
+        self.words = jieba.lcut(corpus, cut_all=False)
         print(f'self.words: {self.words[:1000]}')
         print(f'total words: {len(self.words)}')
         self.uniq_words = self.get_uniq_words()
