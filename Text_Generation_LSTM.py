@@ -15,8 +15,7 @@ class Dataset():
         cc = OpenCC('s2t')
         # 讀txt檔案，並且接成一個長字串後，去除空白、去除換行符號後，以字為單位切割
         corpus = cc.convert(open(path, 'r', encoding='UTF-8').read()).replace('\n', '').replace(' ', '').replace('　','')
-        self.words = jieba.lcut(corpus, cut_all=False)
-        print(f'self.words: {self.words[:1000]}')
+        self.words = jieba.lcut(corpus)
         print(f'total words: {len(self.words)}')
         self.uniq_words = self.get_uniq_words()
         print(f'uniq words: {len(self.uniq_words)}')
@@ -63,7 +62,7 @@ class Model(nn.Module):
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-def train(dataloader, model, epochs=10, sequence_length=4):
+def train(dataloader, model, epochs=10):
     model.train()
     
     loss_function = nn.CrossEntropyLoss()
@@ -85,19 +84,18 @@ def predict(dataset, model, text, next_words=100):
     words = jieba.lcut(text)
     for i in range(0, next_words):
         x = torch.tensor([[dataset.word_to_index[w] for w in words[i:]]]).to(device)
-        y_pred, state = model(x)
+        y_pred, _ = model(x)
         last_word_logits = y_pred[0][-1]
         p = torch.softmax(last_word_logits, dim=0).cpu().detach().numpy()
         word_index = np.random.choice(len(last_word_logits), p=p)
         words.append(dataset.index_to_word[word_index])
-
     return ''.join(words)
 
 if __name__ == '__main__':
-    sequence_length = 3
-    dataset = Dataset('Data/三國演義-smalldata.txt', sequence_length)
+    sequence_length = 10
+    dataset = Dataset('Data/三國演義.txt', sequence_length)
     #dataset = Dataset('Data/reddit-cleanjokes.csv', sequence_length)
     dataloader = DataLoader(dataset, batch_size=1024)
     model = Model(n_vocab = dataset.vocab_size).to(device)
-    train(dataloader, model, epochs=1, sequence_length=sequence_length)
-    print(predict(dataset, model, text='兄弟三人',next_words=2500))
+    train(dataloader, model, epochs=10)
+    print(predict(dataset, model, text='天下大亂',next_words=2500))

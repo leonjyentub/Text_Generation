@@ -7,7 +7,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class TokenEmbedding(torch.nn.Module):
     """
     PyTorch module that converts tokens into embeddings.
@@ -18,10 +18,7 @@ class TokenEmbedding(torch.nn.Module):
 
     def __init__(self, d_model, number_of_tokens):
         super().__init__()
-        self.embedding_layer = torch.nn.Embedding(
-            num_embeddings=number_of_tokens,
-            embedding_dim=d_model
-        )
+        self.embedding_layer = torch.nn.Embedding(num_embeddings=number_of_tokens,embedding_dim=d_model)
 
     def forward(self, x):
         return self.embedding_layer(x)
@@ -43,7 +40,6 @@ class PositionalEncoding(torch.nn.Module):
         """
         Creates a positional encoding matrix of size (max_sequence_length, d_model).
         """
-
         # Initialize positional encoding matrix
         positional_encoding = np.zeros((self.max_sequence_length, self.d_model))
 
@@ -58,7 +54,7 @@ class PositionalEncoding(torch.nn.Module):
                     positional_encoding[pos, i + 1] = np.cos(pos / (10000 ** ((2 * i) / self.d_model)))
 
         # Convert numpy array to PyTorch tensor and return it
-        return torch.from_numpy(positional_encoding).float().to(get_device())
+        return torch.from_numpy(positional_encoding).float().to(device)
 
     def forward(self, x):
         """
@@ -259,8 +255,7 @@ class DecoderStack(torch.nn.Module):
     The decoder stack consists of multiple decoder layers in sequence.
     """
 
-    def __init__(
-            self,
+    def __init__(self,
             embedding_dimension,
             number_of_layers,
             number_of_heads,
@@ -410,7 +405,7 @@ class LanguageModel(torch.nn.Module):
             dropout_rate=checkpoint['dropout_rate']
         )
         model.load_state_dict(checkpoint['model_state_dict'])
-        return model.to(get_device())
+        return model.to(device)
 
 
 class AutoregressiveWrapper(torch.nn.Module):
@@ -454,11 +449,31 @@ class AutoregressiveWrapper(torch.nn.Module):
     @staticmethod
     def load_checkpoint(path) -> 'AutoregressiveWrapper':
         model = LanguageModel.load_checkpoint(path)
-        return AutoregressiveWrapper(model).to(get_device())
+        return AutoregressiveWrapper(model).to(device)
+    
+class CorpusTokenizer:
+    def __init__(self, corpus) -> None:
+        self.dictionary = {'<pad>':0}
+        self.reverse_dictionary = {0:'<pad>'}
+        self.words = list(corpus)
+        for word in self.words:
+            if word not in self.dictionary:
+                self.dictionary[word] = len(self.dictionary)
+                self.reverse_dictionary[self.dictionary[word]] = word
 
+    def tokenize(self, text):
+        return [self.dictionary[c] for c in text]
 
-class Tokenizer:
+    def character_to_token(self, character):
+        return self.dictionary[character]
 
+    def token_to_character(self, token):
+        return self.reverse_dictionary[token]
+
+    def size(self):
+        return len(self.dictionary)
+
+class CharTokenizer:
     def __init__(self):
         self.dictionary = {}
         self.reverse_dictionary = {}
@@ -493,14 +508,9 @@ class Tokenizer:
     def size(self):
         return len(self.dictionary)
 
-
-def get_device():
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 class Trainer:
 
-    def __init__(self, model, tokenizer: Tokenizer, optimizer=None):
+    def __init__(self, model, tokenizer: CorpusTokenizer, optimizer=None):
         super().__init__()
         self.model = model
         if optimizer is None:
@@ -511,6 +521,7 @@ class Trainer:
         self.loss_function = torch.nn.CrossEntropyLoss()
 
     def train(self, data: List[str], epochs, batch_size):
+        print('start training')
         loss_per_epoch = []
         for epoch in range(epochs):
             losses = []
@@ -530,7 +541,7 @@ class Trainer:
                 batches.append((sequence_tensor, mask_tensor))
 
             # Train the model on each batch
-            for batch in batches:
+            for batch_index, batch in enumerate(batches):
                 self.model.train()
 
                 # Create the input and mask tensors
@@ -545,8 +556,8 @@ class Trainer:
 
                 # Compute the model output
                 model_output, target = self.model.forward(
-                    x=input_tensor.to(get_device()),
-                    mask=mask_tensor.to(get_device())
+                    x=input_tensor.to(device),
+                    mask=mask_tensor.to(device)
                 )
 
                 # Compute the losses
@@ -569,6 +580,7 @@ class Trainer:
 
                 # Append the loss to the list of losses, so that the average loss can be computed for this epoch.
                 losses.append(loss.item())
+                print('Epoch:', epoch, 'batch:', batch_index, 'Loss:', loss.item())
 
             # Print the loss
             epoch_loss = np.average(losses)
@@ -580,15 +592,11 @@ class Trainer:
 
 class Generator:
 
-    def __init__(
-            self,
-            model,
-            tokenizer):
+    def __init__(self, model, tokenizer):
         self.model = model
         self.tokenizer = tokenizer
 
-    def generate(
-            self,
+    def generate(self,
             max_tokens_to_generate: int,
             prompt: str = None,
             temperature: float = 1.0,
@@ -609,7 +617,7 @@ class Generator:
                 padding_token=padding_token
             ),
             dtype=torch.long
-        ).to(get_device())
+        ).to(device)
 
         num_dims = len(input_tensor.shape)
 
@@ -668,10 +676,10 @@ class Runner(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def run(self):
+    def run(self, path):
         # Create the tokenizer
-        tokenizer = Tokenizer()
-
+        training_data = list(open(path, 'r', encoding='UTF-8').read().replace('\n', '').replace(' ', '').replace('　',''))
+        tokenizer = CorpusTokenizer(training_data)
         embedding_dimension = 256
         max_sequence_length = 20
         number_of_tokens = tokenizer.size()
@@ -684,24 +692,9 @@ class Runner(torch.nn.Module):
             number_of_layers=3,
             dropout_rate=0.1,
             max_sequence_length=max_sequence_length
-        )).to(get_device())
+        )).to(device)
 
-        # Create the training data
-        training_data = '. '.join([
-            'cats rule the world',
-            'dogs are the best',
-            'elephants have long trunks',
-            'monkeys like bananas',
-            'pandas eat bamboo',
-            'tigers are dangerous',
-            'zebras have stripes',
-            'lions are the kings of the savannah',
-            'giraffes have long necks',
-            'hippos are big and scary',
-            'rhinos have horns',
-            'penguins live in the arctic',
-            'polar bears are white'
-        ])
+        
 
         tokenized_and_padded_training_data = tokenize_and_pad_training_data(max_sequence_length, tokenizer, training_data)
         sequences = create_training_sequences(max_sequence_length, tokenized_and_padded_training_data)
@@ -709,7 +702,7 @@ class Runner(torch.nn.Module):
         # Train the model
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
         trainer = Trainer(model, tokenizer, optimizer)
-        loss_per_epoch = trainer.train(sequences, epochs=120, batch_size=16)
+        loss_per_epoch = trainer.train(sequences, epochs=5, batch_size=1024)
 
         # Plot the loss per epoch in log scale
         plt.plot(loss_per_epoch)
@@ -718,14 +711,14 @@ class Runner(torch.nn.Module):
         plt.xlabel('Epoch')
         plt.show()
 
-        model.save_checkpoint('./trained_model')
+        #model.save_checkpoint('./trained_model')
 
         # Generate text
         max_tokens_to_generate = 400
         generator = Generator(model, tokenizer)
         generated_text = generator.generate(
             max_tokens_to_generate=max_tokens_to_generate,
-            prompt="cats",
+            prompt="天下大勢",
             padding_token=tokenizer.character_to_token('<pad>')
         )
         print(generated_text.replace('<pad>', ''))
@@ -735,4 +728,4 @@ def pad_left(sequence, final_length, padding_token):
     return [padding_token] * (final_length - len(sequence)) + sequence
 
 
-Runner().run()
+Runner().run('Data/三國演義.txt')
